@@ -47,12 +47,13 @@ type Msg
     | RemoveLastStep
     | SetN String
     | GenerateRandomLatticePath
+    | GenerateRandomCatalanPath
     | SetPath Path
 
 
 init () =
-    ( { n = 10
-      , path = [ Up, Up, Down, Up, Up, Up, Down, Up, Down, Down ]
+    ( { n = 5
+      , path = [ Up, Up, Down, Up, Up, Up, Down, Down, Down, Down ]
       }
     , Cmd.none
     )
@@ -96,6 +97,7 @@ update msg model =
                     ( ups, downs ) =
                         countUpsDowns model.path
                 in
+                -- TODO deduplicate the step adding validation logic
                 if ups >= model.n then
                     ( { model | path = model.path ++ [ Down ] }, Cmd.none )
 
@@ -106,7 +108,7 @@ update msg model =
                     ( model, Random.generate identity <| Random.uniform AddUp [ AddDown ] )
 
         SetN nStr ->
-            case String.toInt nStr of
+            case Maybe.map (Basics.clamp 1 maxN) <| String.toInt nStr of
                 Just newN ->
                     ( { model
                         | n = newN
@@ -121,6 +123,12 @@ update msg model =
         GenerateRandomLatticePath ->
             ( model
             , Random.generate SetPath <|
+                Random.List.shuffle (List.repeat model.n Up ++ List.repeat model.n Down)
+            )
+
+        GenerateRandomCatalanPath ->
+            ( model
+            , Random.generate (SetPath << toCatalan) <|
                 Random.List.shuffle (List.repeat model.n Up ++ List.repeat model.n Down)
             )
 
@@ -187,6 +195,7 @@ view model =
     { title = "Catalan"
     , body =
         [ viewControls model
+        , pathFacts model
         , viewLattice model
         ]
     }
@@ -199,8 +208,8 @@ viewControls model =
             [ Html.text "N = "
             , Html.input
                 [ HA.type_ "number"
-                , HA.min "1"
-                , HA.max "10"
+                , HA.min (String.fromInt minN)
+                , HA.max (String.fromInt maxN)
                 , HA.step "1"
                 , HA.value <| String.fromInt model.n
                 , HE.onInput SetN
@@ -208,15 +217,57 @@ viewControls model =
                 []
             ]
         , Html.button [ HE.onClick GenerateRandomLatticePath ] [ Html.text "Random path" ]
-        , Html.button [] [ Html.text "Random Catalan Path" ]
+        , Html.button [ HE.onClick GenerateRandomCatalanPath ] [ Html.text "Random Catalan Path" ]
 
         -- TODO add text explaining arrow keyboard shortcuts
         ]
 
 
+pathFacts : Model -> Html msg
+pathFacts { path, n } =
+    let
+        upStepsAfterLastAbsoluteMinimum =
+            countUpStepsAfterLastAbsoluteMinimum path
+    in
+    Html.div []
+        [ Html.div []
+            [ Html.text <| "There are (2n C n) = " ++ String.fromInt (countLatticePaths n) ++ " lattice paths between (0, 0) and (0, " ++ String.fromInt (2 * n) ++ ")."
+            ]
+        , Html.div []
+            [ Html.text <| "(2n C n) / (n+1) = " ++ String.fromInt (countLatticePaths n // (n + 1)) ++ " of these are catalan paths."
+            ]
+        , Html.text <|
+            if upStepsAfterLastAbsoluteMinimum == 0 then
+                "This is a catalan path."
+
+            else
+                "This is not a catalan path. It has "
+                    ++ String.fromInt upStepsAfterLastAbsoluteMinimum
+                    ++ " upsteps after the last absolute minimum."
+        ]
+
+
+{-| 2n C n
+-}
+countLatticePaths : Int -> Int
+countLatticePaths n =
+    List.product (List.range (n + 1) (2 * n))
+        // List.product (List.range 1 n)
+
+
 squareSize : Float
 squareSize =
     25
+
+
+minN : Int
+minN =
+    1
+
+
+maxN : Int
+maxN =
+    10
 
 
 viewLattice : Model -> Html Msg
@@ -232,7 +283,16 @@ viewLattice model =
                 ]
             ]
             [ grid model
-            , latticePath model
+            , latticePath Color.red model.path
+            , let
+                catalanRepresentative =
+                    toCatalan model.path
+              in
+              if catalanRepresentative /= model.path then
+                latticePath Color.lightBlue catalanRepresentative
+
+              else
+                Html.text ""
             ]
         ]
 
@@ -277,11 +337,11 @@ grid { n } =
         [ upLines, downLines ]
 
 
-latticePath : Model -> Svg msg
-latticePath { path } =
+latticePath : Color.Color -> Path -> Svg msg
+latticePath color path =
     S.g
         [ SA.strokeWidth (px 0.1)
-        , SA.stroke <| Paint Color.red
+        , SA.stroke <| Paint color
         , SA.strokeLinecap StrokeLinecapRound
         ]
     <|
@@ -347,3 +407,79 @@ keyDecoder =
                     _ ->
                         Decode.fail ""
             )
+
+
+toCatalan : Path -> Path
+toCatalan p =
+    let
+        upSteps =
+            countUpStepsAfterLastAbsoluteMinimum p
+    in
+    if upSteps == 0 then
+        p
+
+    else
+        bufToFub upSteps p
+
+
+{-| This is the BUF -> FUB transformation mentioned in 52 c.
+We find the i-th upstep from the end,
+-}
+bufToFub : Int -> Path -> Path
+bufToFub upStepIndexFromTheEnd p =
+    let
+        ( b, f ) =
+            List.foldr
+                (\step ( upStepsWeHave, bSteps, fSteps ) ->
+                    if upStepsWeHave == upStepIndexFromTheEnd then
+                        ( upStepsWeHave, step :: bSteps, fSteps )
+
+                    else
+                        case step of
+                            Up ->
+                                ( upStepsWeHave + 1, bSteps, Up :: fSteps )
+
+                            Down ->
+                                ( upStepsWeHave, bSteps, Down :: fSteps )
+                )
+                ( 0, [], [] )
+                p
+                |> (\( _, b0, uf ) -> ( b0, List.tail uf |> Maybe.withDefault [] ))
+    in
+    f ++ Up :: b
+
+
+{-| Kenneth P. Bogart: Combinatorics Through Guided Discovery;
+
+Problem 52 gives a simple way to explain why there's `(2n C n) / (n+1)` catalan numbers.
+The `n+1` comes from the fact that the `2n C n` lattice paths from (0,0) to (0,2n) can be partitioned
+into `n+1` blocks B where paths in block B\_i contain those paths that have i upsteps after the last absolute minimum.
+
+Catalan paths are exactly those in B\_0 and for each i there's a bijection between B\_0 and B\_i given as follows:
+
+Find i-th upsteps U in the catalan path and take F to be everything before that and B everything after that.
+Then from this FUB catalan path make BUF which will be a path in B\_i.
+
+-}
+countUpStepsAfterLastAbsoluteMinimum : Path -> Int
+countUpStepsAfterLastAbsoluteMinimum =
+    (\( _, _, x ) -> x)
+        << List.foldl
+            (\step ( curY, minY, upStepsAfterMinCount ) ->
+                case step of
+                    Up ->
+                        ( curY + 1, minY, upStepsAfterMinCount + 1 )
+
+                    Down ->
+                        if curY - 1 <= minY then
+                            ( curY - 1, curY - 1, 0 )
+
+                        else
+                            ( curY - 1, minY, upStepsAfterMinCount )
+            )
+            ( 0, 0, 0 )
+
+
+
+-- TODO add buttons to iterate through all catalan paths in some orderly fashion
+-- TODO add buttons to iterate through all paths in some orderly fashion
