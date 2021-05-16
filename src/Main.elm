@@ -5,9 +5,10 @@ import Browser.Events
 import Color
 import Html exposing (Html)
 import Html.Attributes as HA
-import Html.Events as Events
+import Html.Events as HE
 import Json.Decode as Decode exposing (Decoder)
 import Random
+import Random.List
 import TypedSvg as S
 import TypedSvg.Attributes as SA
 import TypedSvg.Core exposing (Svg)
@@ -45,6 +46,8 @@ type Msg
     | AddRandomUpOrDown
     | RemoveLastStep
     | SetN String
+    | GenerateRandomLatticePath
+    | SetPath Path
 
 
 init () =
@@ -115,6 +118,15 @@ update msg model =
                 Nothing ->
                     ( model, Cmd.none )
 
+        GenerateRandomLatticePath ->
+            ( model
+            , Random.generate SetPath <|
+                Random.List.shuffle (List.repeat model.n Up ++ List.repeat model.n Down)
+            )
+
+        SetPath newPath ->
+            ( { model | path = newPath }, Cmd.none )
+
 
 trimPath : Int -> Path -> Path
 trimPath n path =
@@ -169,19 +181,21 @@ viewControls : Model -> Html Msg
 viewControls model =
     Html.div []
         [ Html.label []
-            [ Html.text <| "N = " ++ String.fromInt model.n ++ " "
+            [ Html.text "N = "
             , Html.input
-                [ HA.type_ "range"
+                [ HA.type_ "number"
                 , HA.min "1"
                 , HA.max "10"
-                , HA.value (String.fromInt model.n)
-                , Events.onInput SetN
+                , HA.step "1"
+                , HA.value <| String.fromInt model.n
+                , HE.onInput SetN
                 ]
                 []
             ]
-        , Html.button [] [ Html.text "Random path" ]
+        , Html.button [ HE.onClick GenerateRandomLatticePath ] [ Html.text "Random path" ]
         , Html.button [] [ Html.text "Random Catalan Path" ]
-        , Html.text "Use Up/Down arrow keys to add new path segments, Right arrow key to add new random segment and Left arrow to remove last segment"
+
+        -- TODO add text explaining arrow keyboard shortcuts
         ]
 
 
@@ -217,7 +231,7 @@ grid { n } =
                     (\i ->
                         S.line
                             [ SA.x1 <| px <| toFloat i
-                            , SA.y1 <| px <| toFloat <| -i
+                            , SA.y1 <| px <| toFloat -i
                             , SA.x2 <| px <| toFloat <| n + i
                             , SA.y2 <| px <| toFloat <| n - i
                             ]
@@ -295,7 +309,7 @@ subscriptions _ =
 
 keyDecoder : Decoder Msg
 keyDecoder =
-    Events.keyCode
+    HE.keyCode
         |> Decode.andThen
             (\keyCode ->
                 case keyCode of
