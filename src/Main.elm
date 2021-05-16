@@ -128,26 +128,41 @@ update msg model =
             ( { model | path = newPath }, Cmd.none )
 
 
+{-| Trim the paths when shrinking the grid size.
+Anything that sticks out of the shrunken grid is "bent" into the grid.
+-}
 trimPath : Int -> Path -> Path
 trimPath n path =
     List.reverse <|
         Tuple.second <|
             List.foldl
                 (\step ( ( curX, curY ), steps ) ->
-                    case step of
-                        Up ->
-                            if curX + curY >= 2 * n {- We're at north-east edge -} then
-                                ( ( curX + 1, curY - 1 ), Down :: steps )
+                    let
+                        nextStep =
+                            case step of
+                                Up ->
+                                    if curX + curY >= 2 * n {- We're at north-east edge -} then
+                                        Down
 
-                            else
-                                ( ( curX + 1, curY + 1 ), Up :: steps )
+                                    else
+                                        Up
 
-                        Down ->
-                            if curX - curY >= 2 * n {- We're at south-east edge -} then
-                                ( ( curX + 1, curY + 1 ), Up :: steps )
+                                Down ->
+                                    if curX - curY >= 2 * n {- We're at south-east edge -} then
+                                        Up
 
-                            else
-                                ( ( curX + 1, curY - 1 ), Down :: steps )
+                                    else
+                                        Down
+
+                        deltaY =
+                            case nextStep of
+                                Up ->
+                                    1
+
+                                Down ->
+                                    -1
+                    in
+                    ( ( curX + 1, curY + deltaY ), nextStep :: steps )
                 )
                 ( ( 0, 0 ), [] )
             <|
