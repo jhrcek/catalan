@@ -32,8 +32,8 @@ type alias Model =
 
 
 type Step
-    = Up
-    | Down
+    = Down
+    | Up
 
 
 type alias Path =
@@ -49,6 +49,8 @@ type Msg
     | GenerateRandomLatticePath
     | GenerateRandomCatalanPath
     | SetPath Path
+    | SetSmallestPath
+    | SetNextPath
 
 
 init () =
@@ -135,6 +137,12 @@ update msg model =
         SetPath newPath ->
             ( { model | path = newPath }, Cmd.none )
 
+        SetSmallestPath ->
+            ( { model | path = List.repeat model.n Down ++ List.repeat model.n Up }, Cmd.none )
+
+        SetNextPath ->
+            ( { model | path = nextPath model.path }, Cmd.none )
+
 
 {-| Trim the paths when shrinking the grid size.
 Anything that sticks out of the shrunken grid is "bent" into the grid.
@@ -216,8 +224,12 @@ viewControls model =
                 ]
                 []
             ]
-        , Html.button [ HE.onClick GenerateRandomLatticePath ] [ Html.text "Random path" ]
-        , Html.button [ HE.onClick GenerateRandomCatalanPath ] [ Html.text "Random Catalan Path" ]
+        , Html.button [ HE.onClick GenerateRandomLatticePath ] [ Html.text "Generate random path" ]
+        , Html.button [ HE.onClick GenerateRandomCatalanPath ] [ Html.text "Generate random catalan path" ]
+        , Html.div []
+            [ Html.button [ HE.onClick SetSmallestPath ] [ Html.text "First path" ]
+            , Html.button [ HE.onClick SetNextPath ] [ Html.text "Next path" ]
+            ]
 
         -- TODO add text explaining arrow keyboard shortcuts
         ]
@@ -284,15 +296,16 @@ viewLattice model =
             ]
             [ grid model
             , latticePath Color.red model.path
-            , let
-                catalanRepresentative =
-                    toCatalan model.path
-              in
-              if catalanRepresentative /= model.path then
-                latticePath Color.lightBlue catalanRepresentative
 
-              else
-                Html.text ""
+            --, let
+            --    catalanRepresentative =
+            --        toCatalan model.path
+            --  in
+            --  if catalanRepresentative /= model.path then
+            --    latticePath Color.lightBlue catalanRepresentative
+            --
+            --  else
+            --    Html.text ""
             ]
         ]
 
@@ -482,4 +495,33 @@ countUpStepsAfterLastAbsoluteMinimum =
 
 
 -- TODO add buttons to iterate through all catalan paths in some orderly fashion
--- TODO add buttons to iterate through all paths in some orderly fashion
+
+
+{-| Next path in linear order
+-}
+nextPath : Path -> Path
+nextPath =
+    Tuple.second
+        << List.foldr
+            (\step ( swapDone, tail ) ->
+                case ( swapDone, step, tail ) of
+                    ( True, _, _ ) ->
+                        ( True, step :: tail )
+
+                    ( False, Down, Up :: rest ) ->
+                        ( True, Up :: Down :: List.sortBy stepToComparable rest )
+
+                    ( False, _, rest ) ->
+                        ( False, step :: rest )
+            )
+            ( False, [] )
+
+
+stepToComparable : Step -> Int
+stepToComparable step =
+    case step of
+        Down ->
+            0
+
+        Up ->
+            1
