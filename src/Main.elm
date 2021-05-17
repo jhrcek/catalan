@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Browser
+import Browser exposing (Document)
 import Browser.Events
 import ChungFellerRevisited exposing (countFlaws, fewerFlaws, moreFlaws)
 import Color
@@ -73,45 +73,19 @@ update msg model =
             )
 
         AddUp ->
-            let
-                ( ups, _ ) =
-                    countUpsDowns model.path
-            in
-            if ups >= model.n then
-                ( model, Cmd.none )
-
-            else
-                ( { model | path = model.path ++ [ Up ] }, Cmd.none )
+            ( addStep Up model
+            , Cmd.none
+            )
 
         AddDown ->
-            let
-                ( _, downs ) =
-                    countUpsDowns model.path
-            in
-            if downs >= model.n then
-                ( model, Cmd.none )
-
-            else
-                ( { model | path = model.path ++ [ Down ] }, Cmd.none )
+            ( addStep Down model
+            , Cmd.none
+            )
 
         AddRandomUpOrDown ->
-            if List.length model.path >= 2 * model.n then
-                ( model, Cmd.none )
-
-            else
-                let
-                    ( ups, downs ) =
-                        countUpsDowns model.path
-                in
-                -- TODO deduplicate the step adding validation logic
-                if ups >= model.n then
-                    ( { model | path = model.path ++ [ Down ] }, Cmd.none )
-
-                else if downs >= model.n then
-                    ( { model | path = model.path ++ [ Up ] }, Cmd.none )
-
-                else
-                    ( model, Random.generate identity <| Random.uniform AddUp [ AddDown ] )
+            ( model
+            , Random.generate identity <| Random.uniform AddUp [ AddDown ]
+            )
 
         SetN nStr ->
             case Maybe.map (Basics.clamp 1 maxN) <| String.toInt nStr of
@@ -154,6 +128,27 @@ update msg model =
             ( { model | path = fewerFlaws model.path }, Cmd.none )
 
 
+addStep : Step -> Model -> Model
+addStep step model =
+    if List.length model.path >= 2 * model.n then
+        model
+
+    else
+        let
+            ( ups, downs ) =
+                countUpsDowns model.path
+        in
+        if ups >= model.n then
+            { model | path = model.path ++ [ Down ] }
+
+        else if downs >= model.n then
+            { model | path = model.path ++ [ Up ] }
+
+        else
+            { model | path = model.path ++ [ step ] }
+
+
+view : Model -> Document Msg
 view model =
     { title = "Catalan"
     , body =
